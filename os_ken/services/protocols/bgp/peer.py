@@ -1049,10 +1049,6 @@ class Peer(Source, Sink, NeighborConfListener, Activity):
                     next_hop = self._session_next_hop(path)
                     LOG.debug('using %s as a next_hop address instead'
                               ' of path.nexthop %s', next_hop, path.nexthop)
-
-            nexthop_attr = BGPPathAttributeNextHop(next_hop)
-            assert nexthop_attr, 'Missing NEXTHOP mandatory attribute.'
-
             if not isinstance(path, Ipv4Path):
                 # We construct mpreach-nlri attribute.
                 mpnlri_attr = BGPPathAttributeMpReachNLRI(
@@ -1061,6 +1057,10 @@ class Peer(Source, Sink, NeighborConfListener, Activity):
                     next_hop,
                     nlri_list
                 )
+            else:
+                nexthop_attr = BGPPathAttributeNextHop(next_hop if self._is_ipv4_address(next_hop) else self._common_conf.router_id)
+                assert nexthop_attr, 'Missing NEXTHOP mandatory attribute.'
+
 
             # ORIGIN Attribute.
             # According to RFC this attribute value SHOULD NOT be changed by
@@ -1277,10 +1277,9 @@ class Peer(Source, Sink, NeighborConfListener, Activity):
                 self.state.bgp_state = const.BGP_FSM_CONNECT
                 # If we have specific host interface to bind to, we will do so
                 # else we will bind to system default.
-                if self._neigh_conf.host_bind_ip and \
-                        self._neigh_conf.host_bind_port:
+                if self._neigh_conf.host_bind_ip:
                     bind_addr = (self._neigh_conf.host_bind_ip,
-                                 self._neigh_conf.host_bind_port)
+                                 self._neigh_conf.host_bind_port or 0)
                 else:
                     bind_addr = None
                 peer_address = (self._neigh_conf.ip_address,
@@ -1295,6 +1294,7 @@ class Peer(Source, Sink, NeighborConfListener, Activity):
                 try:
                     password = self._neigh_conf.password
                     self._connect_tcp(peer_address,
+                                      # start_protocol
                                       client_factory,
                                       time_out=tcp_conn_timeout,
                                       bind_address=bind_addr,
@@ -2355,3 +2355,19 @@ class Peer(Source, Sink, NeighborConfListener, Activity):
                     result_attr = m.get_attribute()
                     break
         return result_attr
+    
+    @staticmethod
+    def _is_ipv4_address(address):
+        try:
+            socket.inet_pton(socket.AF_INET, address)
+            return True
+        except socket.error:
+            return False
+
+    @staticmethod
+    def _is_ipv6_address(address):
+        try:
+            socket.inet_pton(socket.AF_INET6, address)
+            return True
+        except socket.error:
+            return False
